@@ -223,7 +223,7 @@ fn transform_markup<R: Read, W: Write>(
             ],
             ..Settings::default()
         },
-        move |chunk: &[u8]| -> Result<(), Box<dyn std::error::Error + Send + Sync> {
+        move |chunk: &[u8]| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             output
                 .write_all(chunk)
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
