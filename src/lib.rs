@@ -255,7 +255,7 @@ fn transform_markup<R: Read, W: Write>(
 }
 
 fn validate_input_container(archive: &mut ZipArchive<File>, max_entry_bytes: u64) -> Result<()> {
-    if archive.len() == 0 {
+    if archive.is_empty() {
         return Err(CleanError::InvalidEpub("archive is empty".into()).into());
     }
     {
