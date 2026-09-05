@@ -75,7 +75,7 @@ fn clean_is_idempotent_for_a_stable_xhtml_fixture() {
     let second = directory.path().join("second.epub");
     write_fixture(
         &input,
-        r#"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><p class="ad-banner"><img src="cover.jpg"/>Offer</p><a href="https://example.com">Chapter</a><a href="#note-1">Footnote</a></body></html>"#,
+        r##"<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><p class="ad-banner"><img src="cover.jpg"/>Offer</p><a href="https://example.com">Chapter</a><a href="#note-1">Footnote</a></body></html>"##,
     );
 
     clean_epub(&input, &first, &CleanOptions::default()).unwrap();
