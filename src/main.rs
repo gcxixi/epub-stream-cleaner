@@ -5,7 +5,11 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "epub-clean", version, about = "High-fidelity streaming EPUB cleaner")]
+#[command(
+    name = "epub-clean",
+    version,
+    about = "High-fidelity streaming EPUB cleaner"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
