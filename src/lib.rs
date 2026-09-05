@@ -186,6 +186,8 @@ fn transform_markup<R: Read, W: Write>(
     let stats = Rc::new(RefCell::new(TransformStats::default()));
     let link_stats = Rc::clone(&stats);
     let ad_stats = Rc::clone(&stats);
+    let output_error = Rc::new(RefCell::new(None));
+    let output_error_sink = Rc::clone(&output_error);
     let remove_external_links = options.remove_external_links;
     let remove_ad_containers = options.remove_ad_containers;
     let mut output = BufWriter::new(output);
@@ -223,10 +225,10 @@ fn transform_markup<R: Read, W: Write>(
             ],
             ..Settings::default()
         },
-        move |chunk: &[u8]| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            output
-                .write_all(chunk)
-                .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
+        move |chunk: &[u8]| {
+            if let Err(error) = output.write_all(chunk) {
+                *output_error_sink.borrow_mut() = Some(error);
+            }
         },
     );
     let mut buffer = [0_u8; COPY_BUFFER_SIZE];
@@ -238,6 +240,9 @@ fn transform_markup<R: Read, W: Write>(
         rewriter.write(&buffer[..read])?;
     }
     rewriter.end()?;
+    if let Some(error) = output_error.borrow_mut().take() {
+        return Err(error.into());
+    }
     output.flush()?;
     match Rc::try_unwrap(stats) {
         Ok(cell) => Ok(cell.into_inner()),
