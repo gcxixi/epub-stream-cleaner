@@ -4,12 +4,13 @@
 
 当前版本的默认策略是：
 
-- 移除外部 HTTP(S) 锚点，但保留锚点文本；
+- 移除外部 URI scheme 锚点，但保留锚点文本；
 - 保留 #footnote-1、chapter.xhtml#p3 等内部语义链接；
+- 硬保护 `epub:type="noteref"` 与 `role="doc-noteref"` 语义脚注；
 - 按 id/class 中的精确 token 过滤常见广告容器；
 - 不删除 img、figure、SVG 等插图节点；
 - 强制 mimetype 为第一个条目、零压缩、内容严格等于 application/epub+zip；
-- 对 container.xml 与处理过的 XML/XHTML 做良好成形校验；
+- 对 container.xml 与处理过的 XML/XHTML 做良好成形校验，并验证 XHTML 根命名空间未改变；
 - 采用临时文件与原子替换，失败时不破坏已有输出。
 
 > “零误伤”应理解为可审计的保守策略，而不是对所有未知 EPUB 内容作绝对承诺。默认只改写明确命中的锚点和容器，建议上线前用真实样本集做 golden diff。
@@ -64,9 +65,10 @@ Workflow 会构建 Linux x86_64/ARM64、macOS x86_64/ARM64 和 Windows x86_64，
 
 1. 单个 EPUB 内部的 ZIP 写出必须是顺序的；真正的并行粒度是多个 EPUB 文件。批处理使用 Rayon。
 2. lol-html 是流式 HTML/XHTML 重写器，不是任意 XML 的通用编辑器。OPF、NCX、container.xml 只做校验，不做 HTML 规则改写。
-3. EPUB 内部的远程图片、字体和媒体不会因为是外部 URL 而自动删除，避免破坏合法资源。
+3. EPUB 内部的远程图片、字体和媒体不会因为是外部 URL 而自动删除，避免破坏合法资源；当前也不会删除图片文件，因此不执行 OPF manifest 注销。
 4. 输入压缩包中的普通资源会解压后重新压缩，因此不能承诺 ZIP 层面的字节级不变；未命中的内容在语义上保持不变。
 5. 默认单条目解压上限为 256 MiB，用于降低 ZIP bomb 风险，可通过参数调整。
+6. 当前版本不会自动重构缺失或扁平目录，也不计算图片 pHash/比例来删除广告图片；详见 `docs/REQUIREMENTS_COVERAGE.md`。
 
 ## License
 

@@ -54,9 +54,9 @@ flowchart TD
 
 只处理带 href 的 a 元素：
 
-- http://、https:// 和协议相对 URL //host/path 视为外部链接；
+- 任意带 URI scheme 的 URL（例如 http://、https://、ftp://、mailto:）以及协议相对 URL //host/path 视为外部链接；
 - #fragment、chapter.xhtml#fragment、../Text/chapter.xhtml 保留；
-- mailto: 不被默认删除；
+- `epub:type` 含 `noteref` 或 `role` 含 `doc-noteref` 的语义脚注硬保护，即使 href 带外部 scheme 也不 unwrap；
 - 命中后使用“移除元素、保留内容”的操作，因此正文文字不丢失；
 - 不自动删除图片、字体、视频或 CSS 的外部 URL。
 
@@ -75,7 +75,13 @@ div, section, article, aside, header, footer, p, table, ul, ol
 
 图片节点本身不在可删除选择器中；命中的广告容器默认只移除容器包装、保留其后代内容，因此广告容器里的插图也能安全保留。如果业务需要删除容器内图片，需要单独增加经过样本验证的策略，而不是扩大默认黑名单。
 
+当前版本没有执行“外链 + 图片长宽比/pHash”的图片删除路径，也没有从 OPF manifest 注销图片。这样做是有意的保守降级：不会出现图片文件已删、manifest 仍引用的 EPUB 破坏问题；该能力属于后续版本，而不是当前已覆盖能力。
+
 ### 3.3 高保真边界
+
+`.xhtml` 条目在改写前先做 XML 良好成形校验，改写后再次校验，并比较根节点默认 namespace。任何校验失败都会阻止原子替换。当前 CI 集成 fixture 覆盖 XHTML namespace、XML 自闭合标签、普通外链和语义脚注。
+
+### 3.4 高保真边界
 
 lol-html 会对被它触及的 HTML 标签进行重新序列化，因此“字节级原样直通”应限定为：
 
@@ -158,7 +164,11 @@ O(rewriter state + chunk size + current entry spool buffers)
 - 失败样本自动归档；
 - 规则版本与产物版本绑定。
 
-## 7. 异常用例矩阵
+## 7. 目录策略
+
+当前版本对 `content.opf`、`toc.ncx`、`nav.xhtml` 只做 XML 校验，不自动重构目录。已有目录不会被改写；缺失或扁平目录的 AST 提取、中文章节正则、nav.xhtml/NCX 生成与 OPF 挂载尚未实现，不能在当前版本宣称覆盖该议程项。
+
+## 8. 异常用例矩阵
 
 | 用例 | 预期 |
 |---|---|
@@ -168,7 +178,8 @@ O(rewriter state + chunk size + current entry spool buffers)
 | XML 标签未闭合 | 拒绝输入或不提交输出 |
 | 内部脚注 #note-1 | 保留 |
 | 跨文件引用 Text/ch2.xhtml#p1 | 保留 |
-| 外部 https:// 锚点 | 默认保留正文、移除锚点 |
+| 外部 ftp:// / https:// 锚点 | 默认保留正文、移除锚点 |
+| epub:type="noteref" 外部 href | 保留完整语义链接 |
 | address-card 类名 | 不当作广告 |
 | ad-banner 容器 | 默认移除 |
 | 广告容器内 figure/img | 移除广告容器包装，保留 figure/img 内容 |
@@ -176,7 +187,7 @@ O(rewriter state + chunk size + current entry spool buffers)
 | 超大单条目 | 按上限拒绝 |
 | 输出路径已存在 | 仅在全流程成功并复验后替换 |
 
-## 8. 验收标准
+## 9. 验收标准
 
 1. 真实样本集在启用默认规则后，未命中条目的结构化内容无变化。
 2. 100 MiB 以上 XHTML 不因全量 DOM 构建导致内存线性膨胀。
