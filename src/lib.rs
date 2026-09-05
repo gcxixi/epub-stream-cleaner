@@ -429,15 +429,14 @@ mod tests {
 
     #[test]
     fn streaming_rewrite_preserves_text_and_images() {
-        let input = concat!(
+        let mut input = concat!(
             r#"<html><body><p class="ad-banner"><img src="cover.jpg">Offer</p>"#,
             r#"<a href="https://example.com">Chapter</a>"#,
             r##"<a href="#note-1">Footnote</a></body></html>"##,
         )
         .as_bytes();
         let mut output = Vec::new();
-        let report =
-            transform_markup(input.as_slice(), &mut output, &CleanOptions::default()).unwrap();
+        let report = transform_markup(&mut input, &mut output, &CleanOptions::default()).unwrap();
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("cover.jpg"));
         assert!(output.contains("Chapter"));
