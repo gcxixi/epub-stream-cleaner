@@ -190,7 +190,8 @@ fn transform_markup<R: Read, W: Write>(
     let output_error_sink = Rc::clone(&output_error);
     let remove_external_links = options.remove_external_links;
     let remove_ad_containers = options.remove_ad_containers;
-    let mut output = BufWriter::new(output);
+    let output = Rc::new(RefCell::new(BufWriter::new(output)));
+    let output_sink = Rc::clone(&output);
     let mut rewriter = HtmlRewriter::new(
         Settings {
             element_content_handlers: vec![
@@ -226,7 +227,7 @@ fn transform_markup<R: Read, W: Write>(
             ..Settings::default()
         },
         move |chunk: &[u8]| {
-            if let Err(error) = output.write_all(chunk) {
+            if let Err(error) = output_sink.borrow_mut().write_all(chunk) {
                 *output_error_sink.borrow_mut() = Some(error);
             }
         },
@@ -243,7 +244,7 @@ fn transform_markup<R: Read, W: Write>(
     if let Some(error) = output_error.borrow_mut().take() {
         return Err(error.into());
     }
-    output.flush()?;
+    output.borrow_mut().flush()?;
     match Rc::try_unwrap(stats) {
         Ok(cell) => Ok(cell.into_inner()),
         Err(shared) => Ok(shared.borrow().clone()),
