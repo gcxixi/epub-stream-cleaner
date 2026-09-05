@@ -54,7 +54,7 @@ fn strict_xhtml_keeps_namespace_and_semantic_noteref() {
     let output = directory.path().join("output.epub");
     write_fixture(
         &input,
-        r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Book</title></head><body><br/><a href="ftp://example.com" epub:type="noteref">[1]</a><a href="#note-1">note</a><a href="https://example.com">ad</a></body></html>"#,
+        r##"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Book</title></head><body><br/><a href="ftp://example.com" epub:type="noteref">[1]</a><a href="#note-1">note</a><a href="https://example.com">ad</a></body></html>"##,
     );
 
     clean_epub(&input, &output, &CleanOptions::default()).unwrap();
