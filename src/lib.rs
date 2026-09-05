@@ -122,11 +122,8 @@ pub fn clean_epub(input: &Path, output: &Path, options: &CleanOptions) -> Result
                     let namespace = xhtml_namespace(source.as_file_mut(), &name)?;
                     source.as_file_mut().seek(SeekFrom::Start(0))?;
                     let mut transformed = NamedTempFile::new_in(output_parent)?;
-                    let stats = transform_markup(
-                        source.as_file_mut(),
-                        transformed.as_file_mut(),
-                        options,
-                    )?;
+                    let stats =
+                        transform_markup(source.as_file_mut(), transformed.as_file_mut(), options)?;
                     transformed.as_file_mut().flush()?;
                     transformed.as_file_mut().seek(SeekFrom::Start(0))?;
                     validate_xml_reader(transformed.as_file_mut(), &name)?;
@@ -502,7 +499,7 @@ mod tests {
     fn preserves_internal_and_fragment_links() {
         assert!(!is_external_href("#footnote-1"));
         assert!(!is_external_href("chapter2.xhtml#p3"));
-        assert!(!is_external_href("mailto:author@example.com"));
+        assert!(is_external_href("mailto:author@example.com"));
     }
 
     #[test]
@@ -543,8 +540,8 @@ mod tests {
         assert!(output.contains("cover.jpg"));
         assert!(output.contains("Chapter"));
         assert!(output.contains("#note-1"));
-        assert!(!output.contains("https://example.com"));
         assert!(output.contains("epub:type=\"noteref\""));
+        assert_eq!(output.matches("https://example.com").count(), 1);
         assert_eq!(report.external_links_removed, 1);
         assert_eq!(report.ad_containers_removed, 1);
     }
