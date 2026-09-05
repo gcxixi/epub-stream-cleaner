@@ -163,7 +163,10 @@ pub fn clean_batch(
     let mut inputs = fs::read_dir(input_dir)
         .with_context(|| format!("read input directory {}", input_dir.display()))?
         .filter_map(|item| item.ok().map(|entry| entry.path()))
-        .filter(|path| path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("epub")))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("epub"))
+        })
         .collect::<Vec<_>>();
     inputs.sort();
     fs::create_dir_all(output_dir)?;
@@ -272,10 +275,10 @@ fn validate_input_container(archive: &mut ZipArchive<File>, max_entry_bytes: u64
         let mut mime = Vec::new();
         (&mut first).take(max_entry_bytes).read_to_end(&mut mime)?;
         if mime != MIME_TYPE {
-            return Err(
-                CleanError::InvalidEpub("mimetype content is not application/epub+zip".into())
-                    .into(),
-            );
+            return Err(CleanError::InvalidEpub(
+                "mimetype content is not application/epub+zip".into(),
+            )
+            .into());
         }
     }
     let mut names = HashSet::new();
@@ -387,8 +390,7 @@ fn is_ad_marker(value: &str) -> bool {
         .any(|token| {
             matches!(
                 token.as_str(),
-                "ad"
-                    | "ads"
+                "ad" | "ads"
                     | "advert"
                     | "advertisement"
                     | "sponsor"
@@ -430,7 +432,7 @@ mod tests {
         let input = concat!(
             r#"<html><body><p class="ad-banner"><img src="cover.jpg">Offer</p>"#,
             r#"<a href="https://example.com">Chapter</a>"#,
-            r#"<a href="#note-1">Footnote</a></body></html>"#,
+            r##"<a href="#note-1">Footnote</a></body></html>"##,
         )
         .as_bytes();
         let mut output = Vec::new();
