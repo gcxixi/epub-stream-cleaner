@@ -1,0 +1,5 @@
+/target
+*.epub
+*.cleaned.epub
+*.json
+.DS_Store
