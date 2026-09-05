@@ -112,18 +112,53 @@ pub fn clean_epub(input: &Path, output: &Path, options: &CleanOptions) -> Result
 
             let is_markup = is_markup_entry(&name);
             if is_markup && !entry.is_dir() {
-                let mut transformed = NamedTempFile::new_in(output_parent)?;
-                let stats = transform_markup(&mut entry, transformed.as_file_mut(), options)?;
-                transformed.as_file_mut().flush()?;
-                transformed.as_file_mut().seek(SeekFrom::Start(0))?;
-                validate_xml_if_needed(&name, transformed.as_file_mut())?;
-                transformed.as_file_mut().seek(SeekFrom::Start(0))?;
-                writer.start_file(&name, file_options_for(&name))?;
-                let copied = io::copy(transformed.as_file_mut(), &mut writer)?;
-                report.bytes_out = report.bytes_out.saturating_add(copied);
-                report.transformed_entries += 1;
-                report.external_links_removed += stats.external_links_removed;
-                report.ad_containers_removed += stats.ad_containers_removed;
+                if is_xhtml_entry(&name) {
+                    let mut source = NamedTempFile::new_in(output_parent)?;
+                    io::copy(&mut entry, source.as_file_mut())?;
+                    source.as_file_mut().flush()?;
+                    source.as_file_mut().seek(SeekFrom::Start(0))?;
+                    validate_xml_reader(source.as_file_mut(), &name)?;
+                    source.as_file_mut().seek(SeekFrom::Start(0))?;
+                    let namespace = xhtml_namespace(source.as_file_mut(), &name)?;
+                    source.as_file_mut().seek(SeekFrom::Start(0))?;
+                    let mut transformed = NamedTempFile::new_in(output_parent)?;
+                    let stats = transform_markup(
+                        source.as_file_mut(),
+                        transformed.as_file_mut(),
+                        options,
+                    )?;
+                    transformed.as_file_mut().flush()?;
+                    transformed.as_file_mut().seek(SeekFrom::Start(0))?;
+                    validate_xml_reader(transformed.as_file_mut(), &name)?;
+                    transformed.as_file_mut().seek(SeekFrom::Start(0))?;
+                    let actual_namespace = xhtml_namespace(transformed.as_file_mut(), &name)?;
+                    if actual_namespace != namespace {
+                        return Err(CleanError::InvalidEpub(format!(
+                            "XHTML namespace changed in {name}: expected {namespace:?}, got {actual_namespace:?}"
+                        ))
+                        .into());
+                    }
+                    transformed.as_file_mut().seek(SeekFrom::Start(0))?;
+                    writer.start_file(&name, file_options_for(&name))?;
+                    let copied = io::copy(transformed.as_file_mut(), &mut writer)?;
+                    report.bytes_out = report.bytes_out.saturating_add(copied);
+                    report.transformed_entries += 1;
+                    report.external_links_removed += stats.external_links_removed;
+                    report.ad_containers_removed += stats.ad_containers_removed;
+                } else {
+                    let mut transformed = NamedTempFile::new_in(output_parent)?;
+                    let stats = transform_markup(&mut entry, transformed.as_file_mut(), options)?;
+                    transformed.as_file_mut().flush()?;
+                    transformed.as_file_mut().seek(SeekFrom::Start(0))?;
+                    validate_xml_if_needed(&name, transformed.as_file_mut())?;
+                    transformed.as_file_mut().seek(SeekFrom::Start(0))?;
+                    writer.start_file(&name, file_options_for(&name))?;
+                    let copied = io::copy(transformed.as_file_mut(), &mut writer)?;
+                    report.bytes_out = report.bytes_out.saturating_add(copied);
+                    report.transformed_entries += 1;
+                    report.external_links_removed += stats.external_links_removed;
+                    report.ad_containers_removed += stats.ad_containers_removed;
+                }
             } else if is_xml_entry(&name) && !entry.is_dir() {
                 let mut xml_copy = NamedTempFile::new_in(output_parent)?;
                 io::copy(&mut entry, xml_copy.as_file_mut())?;
@@ -201,7 +236,11 @@ fn transform_markup<R: Read, W: Write>(
                 element!("a[href]", move |element| {
                     if remove_external_links {
                         if let Some(href) = element.get_attribute("href") {
-                            if is_external_href(&href) {
+                            let epub_type = element.get_attribute("epub:type");
+                            let role = element.get_attribute("role");
+                            if is_external_href(&href)
+                                && !has_noteref_semantics(epub_type.as_deref(), role.as_deref())
+                            {
                                 element.remove_and_keep_content();
                                 link_stats.borrow_mut().external_links_removed += 1;
                             }
@@ -318,6 +357,45 @@ fn validate_xml_if_needed(name: &str, file: &mut File) -> Result<()> {
     Ok(())
 }
 
+fn xhtml_namespace<R: Read>(reader: &mut R, name: &str) -> Result<String> {
+    let mut xml = quick_xml::Reader::from_reader(BufReader::new(reader));
+    let mut buffer = Vec::new();
+    loop {
+        match xml.read_event_into(&mut buffer) {
+            Ok(Event::Start(start)) | Ok(Event::Empty(start)) => {
+                let namespace = start
+                    .attributes()
+                    .filter_map(Result::ok)
+                    .find(|attribute| attribute.key.as_ref() == b"xmlns")
+                    .and_then(|attribute| {
+                        attribute
+                            .decode_and_unescape_value(xml.decoder())
+                            .ok()
+                            .map(|value| value.into_owned())
+                    })
+                    .ok_or_else(|| {
+                        CleanError::InvalidEpub(format!(
+                            "XHTML root is missing the default XML namespace in {name}"
+                        ))
+                    })?;
+                return Ok(namespace);
+            }
+            Ok(Event::Eof) => {
+                return Err(CleanError::InvalidEpub(format!(
+                    "XHTML has no root element in {name}"
+                ))
+                .into());
+            }
+            Ok(_) => buffer.clear(),
+            Err(error) => {
+                return Err(
+                    CleanError::InvalidEpub(format!("malformed XML in {name}: {error}")).into(),
+                );
+            }
+        }
+    }
+}
+
 fn validate_xml_reader<R: Read>(reader: &mut R, name: &str) -> Result<()> {
     let mut xml = quick_xml::Reader::from_reader(BufReader::new(reader));
     let mut buffer = Vec::new();
@@ -346,6 +424,10 @@ fn file_options_for(name: &str) -> SimpleFileOptions {
 fn is_markup_entry(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.ends_with(".xhtml") || lower.ends_with(".html") || lower.ends_with(".htm")
+}
+
+fn is_xhtml_entry(name: &str) -> bool {
+    name.to_ascii_lowercase().ends_with(".xhtml")
 }
 
 fn is_xml_entry(name: &str) -> bool {
@@ -377,8 +459,18 @@ fn is_external_href(href: &str) -> bool {
         return true;
     }
     Url::parse(value)
-        .map(|url| matches!(url.scheme(), "http" | "https"))
+        .map(|url| !url.scheme().is_empty())
         .unwrap_or(false)
+}
+
+fn has_noteref_semantics(epub_type: Option<&str>, role: Option<&str>) -> bool {
+    let token_matches = |value: Option<&str>, expected: &str| {
+        value
+            .unwrap_or_default()
+            .split_ascii_whitespace()
+            .any(|token| token.eq_ignore_ascii_case(expected))
+    };
+    token_matches(epub_type, "noteref") || token_matches(role, "doc-noteref")
 }
 
 fn is_ad_marker(value: &str) -> bool {
@@ -417,7 +509,16 @@ mod tests {
     fn recognizes_external_http_links_only() {
         assert!(is_external_href("https://example.com/ad"));
         assert!(is_external_href("//cdn.example.com/a.js"));
+        assert!(is_external_href("ftp://example.com/book.zip"));
         assert!(!is_external_href("images/cover.jpg"));
+    }
+
+    #[test]
+    fn protects_semantic_noteref_links() {
+        assert!(has_noteref_semantics(Some("noteref"), None));
+        assert!(has_noteref_semantics(Some("chapter noteref"), None));
+        assert!(has_noteref_semantics(None, Some("doc-noteref")));
+        assert!(!has_noteref_semantics(Some("chapter"), Some("note")));
     }
 
     #[test]
@@ -432,6 +533,7 @@ mod tests {
         let mut input = concat!(
             r#"<html><body><p class="ad-banner"><img src="cover.jpg">Offer</p>"#,
             r#"<a href="https://example.com">Chapter</a>"#,
+            r#"<a href="https://example.com" epub:type="noteref">[1]</a>"#,
             r##"<a href="#note-1">Footnote</a></body></html>"##,
         )
         .as_bytes();
@@ -442,6 +544,7 @@ mod tests {
         assert!(output.contains("Chapter"));
         assert!(output.contains("#note-1"));
         assert!(!output.contains("https://example.com"));
+        assert!(output.contains("epub:type=\"noteref\""));
         assert_eq!(report.external_links_removed, 1);
         assert_eq!(report.ad_containers_removed, 1);
     }
